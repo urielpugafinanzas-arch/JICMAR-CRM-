@@ -2,7 +2,7 @@
   "name": "CRM Ventas Pro",
   "short_name": "VentasPro",
   "description": "Sistema de gestión de pedidos, clientes y consignaciones",
-  "start_url": ".",
+  "start_url": "/JICMAR-CRM-/",
   "display": "standalone",
   "background_color": "#0f1117",
   "theme_color": "#0c0e14",
