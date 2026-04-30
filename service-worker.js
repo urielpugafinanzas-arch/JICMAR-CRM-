@@ -1,149 +1,116 @@
-// ============================================================
-// service-worker.js — CRM Ventas Pro
-// ============================================================
+    // ── Versión del cache ──
+const CACHE_NAME = 'jicmar-crm-v1.0.0';
 
-const CACHE_NAME = 'crm-ventas-v1.1';
-
-// FIX: solo cachear assets locales propios. Las URLs externas
-// (CDN, Google Fonts) se manejan por red con fallback,
-// nunca en el paso install para no bloquear la instalación.
-const STATIC_ASSETS = [
-  '/JICMAR-CRM-/',
-  '/JICMAR-CRM-/index.html',
-  '/JICMAR-CRM-/styles.css',
-  '/JICMAR-CRM-/app.js',
-  '/JICMAR-CRM-/firebase.js',
-  '/JICMAR-CRM-/manifest.json',
-  '/JICMAR-CRM-/icons/icon-192.png',
-  '/JICMAR-CRM-/icons/icon-512.png'
+const ASSETS = [
+  './index.html',
+  './manifest.json'
 ];
 
-// ── INSTALACIÓN ─────────────────────────────────────────────
-self.addEventListener('install', (event) => {
-  console.log('[SW] Installing...');
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      console.log('[SW] Caching local static assets');
-      // FIX: usar addAll solo con assets locales garantizados
-      return Promise.allSettled(
-        STATIC_ASSETS.map(url =>
-          cache.add(url).catch(err =>
-            console.warn(`[SW] No se pudo cachear ${url}:`, err)
-          )
-        )
-      );
-    })
+// ── INSTALL ──
+self.addEventListener('install', e => {
+  e.waitUntil(
+    caches.open(CACHE_NAME)
+      .then(cache => cache.addAll(ASSETS))
+      .catch(err => console.warn('SW install cache error:', err))
   );
   self.skipWaiting();
 });
 
-// ── ACTIVACIÓN ──────────────────────────────────────────────
-self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating...');
-  event.waitUntil(
-    caches.keys().then((cacheNames) =>
+// ── ACTIVATE ──
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys().then(keys =>
       Promise.all(
-        cacheNames
-          .filter(name => name !== CACHE_NAME)
-          .map(name => {
-            console.log('[SW] Eliminando caché antiguo:', name);
-            return caches.delete(name);
-          })
+        keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))
       )
     )
   );
   self.clients.claim();
 });
 
-// ── FETCH ────────────────────────────────────────────────────
-self.addEventListener('fetch', (event) => {
-  const url = event.request.url;
+// ── FETCH ──
+self.addEventListener('fetch', e => {
+  const url = e.request.url;
 
-  // FIX: excluir Firebase, APIs externas y peticiones no-GET
-  // Cubre todos los subdominios de googleapis y firebase
-  if (
-    event.request.method !== 'GET' ||
-    url.includes('firestore.googleapis.com') ||
-    url.includes('identitytoolkit.googleapis.com') ||
-    url.includes('securetoken.googleapis.com') ||
-    url.includes('firebaseio.com') ||
-    url.includes('firebase.googleapis.com') ||
-    url.includes('firebaseapp.com') ||
-    url.includes('cloudfunctions.net')
-  ) {
-    return; // dejar pasar sin interceptar
-  }
+  if (!url.startsWith('http://') && !url.startsWith('https://')) return;
 
-  // Recursos externos (fonts, CDN): Cache First con fallback a red
-  if (
-    url.includes('fonts.googleapis.com') ||
-    url.includes('fonts.gstatic.com') ||
-    url.includes('cdnjs.cloudflare.com')
-  ) {
-    event.respondWith(
-      caches.match(event.request).then(cached => {
-        if (cached) return cached;
-        return fetch(event.request).then(response => {
-          if (response && response.status === 200) {
-            // FIX: abrir caché una sola vez y reusar
-            caches.open(CACHE_NAME).then(cache =>
-              cache.put(event.request, response.clone())
-            );
-          }
-          return response;
-        }).catch(() => undefined);
-      })
+  // index.html — red primero, caché como fallback
+  if (url.endsWith('/') || url.includes('index.html')) {
+    e.respondWith(
+      fetch(e.request)
+        .then(res => {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+          return res;
+        })
+        .catch(() => caches.match(e.request)
+          .then(cached => cached || new Response('<h1>Sin conexión</h1><p>Conéctate para usar CRM Ventas Pro.</p>', {
+            headers: { 'Content-Type': 'text/html' }
+          }))
+        )
     );
     return;
   }
 
-  // Recursos locales: Network First con fallback a caché
-  event.respondWith(
-    // FIX: abrir el caché una sola vez para leer Y escribir
-    caches.open(CACHE_NAME).then(cache =>
-      fetch(event.request)
-        .then(response => {
-          if (response && response.status === 200) {
-            cache.put(event.request, response.clone());
-          }
-          return response;
+  // Firebase y Google — solo red, sin cachear
+  if (
+    url.includes('gstatic.com') ||
+    url.includes('googleapis.com') ||
+    url.includes('firebaseapp.com') ||
+    url.includes('firebaseio.com') ||
+    url.includes('cloudfunctions.net')
+  ) {
+    e.respondWith(
+      fetch(e.request).catch(() => new Response('', { status: 503 }))
+    );
+    return;
+  }
+
+  // Resto de assets — caché primero, red como fallback
+  e.respondWith(
+    caches.match(e.request).then(cached => {
+      if (cached) return cached;
+      return fetch(e.request)
+        .then(res => {
+          if (!res || res.status !== 200 || res.type === 'opaque') return res;
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(e.request, clone));
+          return res;
         })
-        .catch(() =>
-          cache.match(event.request).then(cached => {
-            if (cached) return cached;
-            // Fallback final a index.html para navegación SPA
-            if (event.request.destination === 'document') {
-              return cache.match('/JICMAR-CRM-/index.html');
-            }
-            return new Response('Sin conexión', {
-              status: 503,
-              statusText: 'Service Unavailable'
-            });
-          })
-        )
-    )
+        .catch(() => new Response('', { status: 503 }));
+    })
   );
 });
 
-// ── NOTIFICACIONES PUSH ──────────────────────────────────────
-self.addEventListener('push', (event) => {
-  const data = event.data ? event.data.json() : {};
+// ── PUSH NOTIFICATIONS ──
+self.addEventListener('push', e => {
+  let data = {};
+  try {
+    data = e.data ? e.data.json() : {};
+  } catch (err) {
+    data = { title: 'CRM Ventas Pro', body: e.data ? e.data.text() : '' };
+  }
+
   const options = {
-    body: data.body || 'Nueva notificación',
-    icon: '/icons/icon-192.png',
-    badge: '/icons/icon-192.png',
-    vibrate: [100, 50, 100],
-    data: { url: data.url || '/' }
+    body: data.body || '',
+    icon: data.icon || './icon-192.png',
+    badge: './icon-192.png',
+    tag: data.tag || 'jicmar-crm',
+    requireInteraction: true,
+    data: { url: data.url || './' }
   };
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'CRM Ventas', options)
-  );
+  e.waitUntil(self.registration.showNotification(data.title || 'CRM Ventas Pro', options));
 });
 
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  event.waitUntil(
-    clients.openWindow(event.notification.data.url)
+// ── NOTIFICATION CLICK ──
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+      for (let c of list) {
+        if (c.url.includes(self.location.origin) && 'focus' in c) return c.focus();
+      }
+      return self.clients.openWindow('./');
+    })
   );
 });
-              
