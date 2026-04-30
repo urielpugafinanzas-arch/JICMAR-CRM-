@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c0e14" />
+  <meta name="description" content="CRM Ventas Pro - Gestión de pedidos, clientes y consignaciones" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="VentasPro" />
+
+  <title>CRM Ventas Pro</title>
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+
+  <!-- Preconnect para fuentes -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════
+     PANTALLA DE LOGIN
+══════════════════════════════════════════════ -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="logo-icon">🚀</div>
+      <h1>CRM Ventas Pro</h1>
+      <p>Sistema de gestión de ventas</p>
+    </div>
+
+    <form id="login-form" novalidate>
+      <div class="form-group">
+        <label for="login-email">Correo electrónico</label>
+        <input
+          type="email"
+          id="login-email"
+          placeholder="vendedor@empresa.com"
+          autocomplete="email"
+          required
+        />
+      </div>
+      <div class="form-group">
+        <label for="login-password">Contraseña</label>
+        <input
+          type="password"
+          id="login-password"
+          placeholder="••••••••"
+          autocomplete="current-password"
+          required
+        />
+      </div>
+      <button type="submit" id="btn-login" class="btn btn-primary" style="margin-top:0.5rem;">
+        Entrar →
+      </button>
+    </form>
+
+    <p style="text-align:center;font-size:0.75rem;color:var(--text-muted);margin-top:1.5rem;">
+      ¿Sin cuenta? Contacta al administrador
+    </p>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     APLICACIÓN PRINCIPAL
+══════════════════════════════════════════════ -->
+<div id="app">
+
+  <!-- HEADER -->
+  <header class="app-header">
+    <div class="header-brand">
+      <span>VentasPro</span>
+      <span class="dot"></span>
+    </div>
+    <div class="header-right">
+      <div class="user-chip">
+        <div class="avatar" id="user-avatar">U</div>
+        <span id="user-name">Usuario</span>
+      </div>
+      <button id="btn-logout" class="btn btn-outline btn-sm btn-icon" title="Cerrar sesión">
+        ⏻
+      </button>
+    </div>
+  </header>
+
+  <!-- ─────────────────────────────────────────
+       PÁGINA: DASHBOARD
+  ──────────────────────────────────────────── -->
+  <section id="page-dashboard" class="page active">
+
+    <div style="padding-bottom:0.5rem;">
+      <div class="section-header">
+        <h2>📊 Dashboard</h2>
+        <button class="btn btn-primary btn-sm" id="btn-nuevo-pedido">+ Pedido</button>
+      </div>
+    </div>
+
+    <!-- Estadísticas -->
+    <div class="dashboard-grid">
+      <div class="stat-card accent">
+        <span class="stat-icon">💰</span>
+        <div class="stat-value" id="stat-total-vendido">$0</div>
+        <div class="stat-label">Total Vendido</div>
+      </div>
+      <div class="stat-card success">
+        <span class="stat-icon">✅</span>
+        <div class="stat-value" id="stat-cobrado">$0</div>
+        <div class="stat-label">Cobrado</div>
+      </div>
+      <div class="stat-card warning">
+        <span class="stat-icon">⏳</span>
+        <div class="stat-value" id="stat-pendiente">$0</div>
+        <div class="stat-label">Pendiente</div>
+      </div>
+      <div class="stat-card info">
+        <span class="stat-icon">📦</span>
+        <div class="stat-value" id="stat-consignacion">$0</div>
+        <div class="stat-label">Consignación</div>
+      </div>
+      <div class="stat-card accent">
+        <span class="stat-icon">🧾</span>
+        <div class="stat-value" id="stat-pedidos">0</div>
+        <div class="stat-label">Pedidos</div>
+      </div>
+      <div class="stat-card success">
+        <span class="stat-icon">🏆</span>
+        <div class="stat-value" id="stat-top-producto" style="font-size:0.75rem;">—</div>
+        <div class="stat-label">Top Producto</div>
+      </div>
+    </div>
+
+    <!-- Seguimiento inteligente -->
+    <div class="section-header">
+      <h3 style="font-size:0.95rem;">👁 Seguimiento inteligente</h3>
+    </div>
+    <div id="seguimiento-container">
+      <div class="loading-spinner"><div class="spinner"></div><span>Cargando...</span></div>
+    </div>
+
+  </section>
+
+  <!-- ─────────────────────────────────────────
+       PÁGINA: PEDIDOS
+  ──────────────────────────────────────────── -->
+  <section id="page-pedidos" class="page">
+
+    <div class="section-header">
+      <h2>📋 Pedidos</h2>
+      <button class="btn btn-primary btn-sm" onclick="if(window.App){App.modoEdicion=null;} navigateTo('nuevo-pedido')">+ Nuevo</button>
+    </div>
+
+    <!-- Búsqueda -->
+    <div class="search-bar">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="buscar-pedidos" placeholder="Buscar escuela, producto..." />
+    </div>
+
+    <!-- Filtros -->
+    <div class="filtros-bar">
+      <button class="filtro-chip active" data-estado="todos">Todos</button>
+      <button class="filtro-chip" data-estado="pendiente">⏳ Pendiente</button>
+      <button class="filtro-chip" data-estado="entregado">📦 Entregado</button>
+      <button class="filtro-chip" data-estado="parcial">🔄 Parcial</button>
+      <button class="filtro-chip" data-estado="pagado">✅ Pagado</button>
+      <button class="filtro-chip" data-estado="cancelado">✕ Cancelado</button>
+    </div>
+
+    <!-- Lista de pedidos -->
+    <div id="pedidos-container" class="pedidos-list">
+      <div class="loading-spinner"><div class="spinner"></div><span>Cargando pedidos...</span></div>
+    </div>
+
+  </section>
+
+  <!-- ─────────────────────────────────────────
+       PÁGINA: NUEVO / EDITAR PEDIDO
+  ──────────────────────────────────────────── -->
+  <section id="page-nuevo-pedido" class="page">
+
+    <div class="section-header">
+      <h2 id="form-pedido-title">📝 Nuevo Pedido</h2>
+      <button class="btn btn-outline btn-sm" onclick="navigateTo('pedidos')">← Volver</button>
+    </div>
+
+    <form id="form-pedido" novalidate>
+
+      <!-- DATOS DEL CLIENTE -->
+      <div class="form-card">
+        <div class="form-section-title">👤 Datos del cliente</div>
+
+        <div class="form-group">
+          <label for="escuela">Escuela / Empresa *</label>
+          <input type="text" id="escuela" placeholder="Ej: Primaria Benito Juárez" autocomplete="organization" />
+          <span class="field-error">Campo requerido</span>
+        </div>
+
+        <div class="form-group">
+          <label for="direccion">Dirección</label>
+          <input type="text" id="direccion" placeholder="Calle, número, colonia" autocomplete="street-address" />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="contacto">Nombre contacto *</label>
+            <input type="text" id="contacto" placeholder="Nombre completo" autocomplete="name" />
+            <span class="field-error">Requerido</span>
+          </div>
+          <div class="form-group">
+            <label for="telefono">Teléfono *</label>
+            <input type="tel" id="telefono" placeholder="5512345678" autocomplete="tel" inputmode="tel" />
+            <span class="field-error">Requerido</span>
+          </div>
+        </div>
+
+        <!-- Capturar ubicación -->
+        <div class="form-group">
+          <label>Ubicación GPS</label>
+          <div class="location-group">
+            <button type="button" id="btn-ubicacion" class="btn btn-outline btn-sm">
+              📍 Capturar ubicación
+            </button>
+          </div>
+          <div class="location-result" id="location-result"></div>
+        </div>
+
+      </div>
+
+      <!-- DATOS DEL PEDIDO -->
+      <div class="form-card">
+        <div class="form-section-title">🎁 Datos del pedido</div>
+
+        <div class="form-group">
+          <label for="producto">Producto *</label>
+          <input type="text" id="producto" placeholder="Nombre del producto" />
+          <span class="field-error">Requerido</span>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="cantidad">Cantidad *</label>
+            <input type="number" id="cantidad" placeholder="0" min="1" inputmode="numeric" />
+            <span class="field-error">Requerido</span>
+          </div>
+          <div class="form-group">
+            <label for="precioUnitario">Precio unitario ($)</label>
+            <input type="number" id="precioUnitario" placeholder="0.00" min="0" step="0.01" inputmode="decimal" />
+          </div>
+        </div>
+
+        <!-- Tipo de venta -->
+        <div class="form-group">
+          <label>Tipo de venta</label>
+          <div class="tipo-venta-toggle">
+            <input type="radio" name="tipoVenta" id="tv-directa" value="directa" checked />
+            <label for="tv-directa">💵 Venta directa</label>
+            <input type="radio" name="tipoVenta" id="tv-consig" value="consignacion" />
+            <label for="tv-consig">📦 Consignación</label>
+          </div>
+        </div>
+
+        <!-- Sección consignación (oculta por defecto) -->
+        <div id="consignacion-section">
+          <div class="form-section-title" style="border:none;padding:0;margin-bottom:0.75rem;">
+            📦 Detalles de consignación
+          </div>
+
+          <div class="form-group">
+            <label for="fechaEntregaConsig">Fecha de entrega</label>
+            <input type="date" id="fechaEntregaConsig" />
+          </div>
+
+          <!-- Cálculos automáticos -->
+          <div class="consignacion-calculo">
+            <div class="calculo-item">
+              <div class="c-val" id="calc-total">$0</div>
+              <div class="c-label">Total potencial</div>
+            </div>
+            <div class="calculo-item">
+              <div class="c-val" id="calc-restante">0</div>
+              <div class="c-label">Restantes</div>
+            </div>
+            <div class="calculo-item">
+              <div class="c-val" id="calc-vendido">$0</div>
+              <div class="c-label">Vendido ($)</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Notas -->
+        <div class="form-group" style="margin-top:0.75rem;">
+          <label for="notas">Notas adicionales</label>
+          <textarea id="notas" placeholder="Observaciones del pedido..."></textarea>
+        </div>
+
+      </div>
+
+      <!-- FOTO -->
+      <div class="form-card">
+        <div class="form-section-title">📷 Foto del pedido</div>
+
+        <div class="photo-upload-area">
+          <input type="file" id="foto-input" accept="image/*" capture="environment" />
+          <div>📷 Tomar foto o seleccionar imagen</div>
+          <div style="font-size:0.72rem;margin-top:0.25rem;">JPG, PNG, WebP · Máx 5MB</div>
+        </div>
+        <div class="photo-preview" id="foto-preview"></div>
+      </div>
+
+      <!-- BOTÓN SUBMIT -->
+      <button type="submit" id="btn-submit-pedido" class="btn btn-primary" style="margin-bottom:1rem;">
+        💾 Guardar Pedido
+      </button>
+
+    </form>
+
+  </section>
+
+  <!-- ─────────────────────────────────────────
+       PÁGINA: CLIENTES
+  ──────────────────────────────────────────── -->
+  <section id="page-clientes" class="page">
+
+    <div class="section-header">
+      <h2>👥 Clientes</h2>
+      <span id="stat-total-clientes" class="badge badge-consig">0</span>
+    </div>
+
+    <div class="search-bar">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="buscar-clientes" placeholder="Buscar cliente, teléfono..." />
+    </div>
+
+    <div id="clientes-container">
+      <div class="loading-spinner"><div class="spinner"></div><span>Cargando clientes...</span></div>
+    </div>
+
+  </section>
+
+  <!-- ─────────────────────────────────────────
+       PÁGINA: REPORTES
+  ──────────────────────────────────────────── -->
+  <section id="page-reportes" class="page">
+
+    <div class="section-header">
+      <h2>📄 Reportes PDF</h2>
+    </div>
+
+    <!-- Selección de tipo -->
+    <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.75rem;">
+      Selecciona el tipo de reporte:
+    </div>
+
+    <div class="reporte-options">
+      <div class="reporte-card selected" data-tipo="ventas">
+        <div class="reporte-icon">📊</div>
+        <div class="reporte-nombre">Ventas</div>
+        <div class="reporte-desc">Total vendido y cobrado</div>
+      </div>
+      <div class="reporte-card" data-tipo="clientes">
+        <div class="reporte-icon">👤</div>
+        <div class="reporte-nombre">Clientes nuevos</div>
+        <div class="reporte-desc">Registros del período</div>
+      </div>
+      <div class="reporte-card" data-tipo="perdidos">
+        <div class="reporte-icon">😴</div>
+        <div class="reporte-nombre">Inactivos</div>
+        <div class="reporte-desc">Sin actividad +30d</div>
+      </div>
+      <div class="reporte-card" data-tipo="consig">
+        <div class="reporte-icon">📦</div>
+        <div class="reporte-nombre">Consignaciones</div>
+        <div class="reporte-desc">Stock pendiente</div>
+      </div>
+    </div>
+
+    <!-- Rango de fechas -->
+    <div class="form-card">
+      <div class="form-section-title">📅 Rango de fechas</div>
+      <div class="fecha-range">
+        <div class="form-group" style="margin:0;">
+          <label for="fecha-inicio">Desde</label>
+          <input type="date" id="fecha-inicio" />
+        </div>
+        <div class="form-group" style="margin:0;">
+          <label for="fecha-fin">Hasta</label>
+          <input type="date" id="fecha-fin" />
+        </div>
+      </div>
+    </div>
+
+    <button id="btn-generar-pdf" class="btn btn-primary">
+      📄 Generar PDF
+    </button>
+
+    <div style="margin-top:1.5rem;padding:1rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);">
+      <div style="font-size:0.8rem;color:var(--text-muted);">
+        <strong style="color:var(--text);">ℹ️ Sobre los reportes</strong><br><br>
+        El PDF se descargará automáticamente con nombre dinámico.<br>
+        <span style="color:var(--accent2);">Ej: reporte_ventas_abril_2025.pdf</span><br><br>
+        Incluye encabezados, tablas y totales profesionales.
+      </div>
+    </div>
+
+  </section>
+
+  <!-- ─────────────────────────────────────────
+       NAVEGACIÓN INFERIOR
+  ──────────────────────────────────────────── -->
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-page="dashboard">
+      <span class="nav-icon">📊</span>
+      <span>Inicio</span>
+    </button>
+    <button class="nav-item" data-page="pedidos">
+      <span class="nav-icon">📋</span>
+      <span>Pedidos</span>
+    </button>
+    <button class="nav-item" data-page="nuevo-pedido">
+      <span class="nav-icon" style="font-size:1.6rem;background:var(--accent);border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;margin-bottom:2px;">＋</span>
+      <span>Nuevo</span>
+    </button>
+    <button class="nav-item" data-page="clientes">
+      <span class="nav-icon">👥</span>
+      <span>Clientes</span>
+      <span class="nav-badge" id="badge-seguimiento" style="display:none;">0</span>
+    </button>
+    <button class="nav-item" data-page="reportes">
+      <span class="nav-icon">📄</span>
+      <span>Reportes</span>
+    </button>
+  </nav>
+
+</div>
+<!-- /app -->
+
+<!-- TOAST CONTAINER -->
+<div class="toast-container" id="toast-container"></div>
+
+<!-- SCRIPTS -->
+<!-- Firebase (ESM) cargado por app.js como módulo -->
+<script type="module" src="app.js"></script>
+
+<!-- navigateTo se expone como window.navigateTo desde app.js (módulo) -->
+<!-- No se necesita redefinir aquí —— evita doble definición -->
+
+<!-- Registro del Service Worker (PWA) -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then(reg => console.log('[SW] Registrado:', reg.scope))
+        .catch(err => console.warn('[SW] Error al registrar:', err));
+    });
+  }
+</script>
+
+</body>
+</html>
