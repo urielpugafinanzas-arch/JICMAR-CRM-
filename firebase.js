@@ -93,6 +93,25 @@ const Auth = {
 };
 
 // ============================================================
+// CONFIG — Bodega
+// ============================================================
+const Config = {
+  async obtenerBodega() {
+    try {
+      const docRef = doc(db, 'config', 'Bodega');
+      const snap = await getDoc(docRef);
+      if (snap.exists()) {
+        const data = snap.data();
+        return { success: true, ubicacion: { lat: data.lat, lng: data.lng } };
+      }
+      return { success: false, error: 'No se encontró la ubicación de bodega' };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+};
+
+// ============================================================
 // STORAGE
 // ============================================================
 const Storage = {
@@ -153,7 +172,6 @@ const Storage = {
 // PEDIDOS
 // ============================================================
 const Pedidos = {
-  // Nuevo método para el formato con múltiples productos y clienteId
   async crearNuevo(datos) {
     try {
       if (!datos.clienteId) return { success: false, error: 'Se requiere un cliente' };
@@ -197,7 +215,6 @@ const Pedidos = {
     }
   },
 
-  // Método original conservado para compatibilidad
   async crear(datos) {
     return await this.crearNuevo(datos);
   },
@@ -358,4 +375,4 @@ const Clientes = {
   }
 };
 
-export { db, auth, Auth, Pedidos, Clientes, Storage, COLLECTIONS, serverTimestamp, Timestamp };
+export { db, auth, Auth, Config, Pedidos, Clientes, Storage, COLLECTIONS, serverTimestamp, Timestamp };
