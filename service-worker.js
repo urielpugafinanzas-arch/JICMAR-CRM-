@@ -1,9 +1,12 @@
-    // ── Versión del cache ──
-const CACHE_NAME = 'jicmar-crm-v1.0.0';
+// ── Versión del cache ──
+const CACHE_NAME = 'jicmar-crm-v1.0.1';
 
 const ASSETS = [
   './index.html',
-  './manifest.json'
+  './manifest.json',
+  './app.js',
+  './firebase.js',
+  './styles.css'
 ];
 
 // ── INSTALL ──
@@ -44,7 +47,7 @@ self.addEventListener('fetch', e => {
           return res;
         })
         .catch(() => caches.match(e.request)
-          .then(cached => cached || new Response('<h1>Sin conexión</h1><p>Conéctate para usar CRM Ventas Pro.</p>', {
+          .then(cached => cached || new Response('<h1>Sin conexión</h1><p>Conéctate para usar Jicmar CRM.</p>', {
             headers: { 'Content-Type': 'text/html' }
           }))
         )
@@ -88,7 +91,7 @@ self.addEventListener('push', e => {
   try {
     data = e.data ? e.data.json() : {};
   } catch (err) {
-    data = { title: 'CRM Ventas Pro', body: e.data ? e.data.text() : '' };
+    data = { title: 'Jicmar CRM', body: e.data ? e.data.text() : '' };
   }
 
   const options = {
@@ -99,7 +102,7 @@ self.addEventListener('push', e => {
     requireInteraction: true,
     data: { url: data.url || './' }
   };
-  e.waitUntil(self.registration.showNotification(data.title || 'CRM Ventas Pro', options));
+  e.waitUntil(self.registration.showNotification(data.title || 'Jicmar CRM', options));
 });
 
 // ── NOTIFICATION CLICK ──
