@@ -588,38 +588,6 @@ window.calcularDiferenciaModal = function () {
     diffInfo.textContent = `✅ Pago con excedente de ${diff.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}. Venta cerrada.`;
   }
 };
-  // Solo calcular diferencia si es venta directa
-  const esConsig = pedido.tipoVenta === 'consignacion';
-  if (esConsig) return;
-
-  const montoInput = document.getElementById('modal-monto-cobrado');
-  const montoCobrado = parseFloat(montoInput?.value) || 0;
-  const diffInfo = document.getElementById('modal-diferencia-info');
-  if (!diffInfo) return;
-
-  if (montoInput?.value === '') {
-    diffInfo.style.display = 'none';
-    return;
-  }
-
-  const diff = montoCobrado - totalEntregado;
-  diffInfo.style.display = 'block';
-
-  if (Math.abs(diff) < 0.01) {
-    diffInfo.style.background = 'rgba(34,197,94,0.1)';
-    diffInfo.style.color = '#4ade80';
-    diffInfo.textContent = '✅ Cobro exacto. Venta cerrada.';
-  } else if (diff < 0) {
-    diffInfo.style.background = 'rgba(239,68,68,0.1)';
-    diffInfo.style.color = '#f87171';
-    diffInfo.textContent = `🔴 Queda deuda de ${Math.abs(diff).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}`;
-  } else {
-    diffInfo.style.background = 'rgba(34,197,94,0.1)';
-    diffInfo.style.color = '#4ade80';
-    diffInfo.textContent = `✅ Pago con excedente de ${diff.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}. Venta cerrada.`;
-  }
-};
-
 window.confirmarEntrega = async function () {
   const pedido = App.pedidosList.find(p => p.id === pedidoEnModal);
   if (!pedido) return;
