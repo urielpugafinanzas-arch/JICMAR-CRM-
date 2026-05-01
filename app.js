@@ -1,5 +1,5 @@
 // ============================================================
-// app.js — Jicmar CRM (ACTUALIZADO)
+// app.js — Jicmar CRM
 // ============================================================
 
 import { Auth, Pedidos, Clientes, Storage } from './firebase.js';
@@ -40,7 +40,7 @@ const App = {
   fotoFile: null,
   modoEdicion: null,
   modoEdicionCliente: null,
-  productosEnPedido: [],   // array de {producto, cantidad, precioUnitario}
+  productosEnPedido: [],
 };
 
 window.App = App;
@@ -204,14 +204,12 @@ function agregarProductoVacio() {
 async function handleSubmitPedido(e) {
   e.preventDefault();
 
-  // Validar cliente
   const clienteId = document.getElementById('pedido-cliente-id')?.value;
   if (!clienteId) {
     showToast('Selecciona un cliente', 'error');
     return;
   }
 
-  // Validar productos
   const productosValidos = App.productosEnPedido.filter(p => p.producto && p.cantidad > 0);
   if (productosValidos.length === 0) {
     showToast('Agrega al menos un producto con cantidad', 'error');
@@ -226,7 +224,6 @@ async function handleSubmitPedido(e) {
     const tipoVenta = document.querySelector('input[name="tipoVenta"]:checked')?.value || 'directa';
     const cliente = App.clientesList.find(c => c.id === clienteId);
     const fechaPedido = document.getElementById('fecha-pedido')?.value || new Date().toISOString().split('T')[0];
-
     const totalPedido = productosValidos.reduce((s, p) => s + (p.cantidad * p.precioUnitario), 0);
 
     const datos = {
@@ -550,4 +547,515 @@ function renderPedidos() {
           ${esPendiente ? `<button class="btn btn-success btn-sm" onclick="marcarEntregado('${p.id}')">📦 Entregado</button>` : ''}
           <select class="estado-select" onchange="cambiarEstado('${p.id}', this.value)">
             <option value="pendiente" ${p.estado === 'pendiente' ? 'selected' : ''}>⏳ Pendiente</option>
-            <option value="entrega
+            <option value="entregado" ${p.estado === 'entregado' ? 'selected' : ''}>📦 Entregado</option>
+            <option value="pagado" ${p.estado === 'pagado' ? 'selected' : ''}>✅ Pagado</option>
+            <option value="parcial" ${p.estado === 'parcial' ? 'selected' : ''}>🔄 Parcial</option>
+            <option value="cancelado" ${p.estado === 'cancelado' ? 'selected' : ''}>✕ Cancelado</option>
+          </select>
+          <button class="btn btn-danger btn-sm" onclick="eliminarPedido('${p.id}')">🗑️</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ============================================================
+// RENDER CLIENTES
+// ============================================================
+function renderClientes() {
+  const container = document.getElementById('clientes-container');
+  if (!container) return;
+
+  let lista = App.clientesList;
+
+  const q = document.getElementById('buscar-clientes')?.value?.toLowerCase() || '';
+  if (q) {
+    lista = lista.filter(c =>
+      c.nombre?.toLowerCase().includes(q) ||
+      c.escuela?.toLowerCase().includes(q) ||
+      c.telefono?.includes(q)
+    );
+  }
+
+  if (lista.length === 0) {
+    container.innerHTML = `<div style="text-align:center;padding:2rem;color:var(--text-muted);">Sin clientes registrados</div>`;
+    return;
+  }
+
+  container.innerHTML = lista.map(c => `
+    <div class="cliente-card" style="cursor:pointer;" onclick="editarCliente('${c.id}')">
+      <div class="cliente-avatar">${(c.nombre || c.escuela || '?').charAt(0).toUpperCase()}</div>
+      <div class="cliente-info">
+        <div class="cliente-nombre">${c.nombre || c.escuela || '—'}
+          ${c.requiereFactura === 'si' ? '<span class="badge" style="background:rgba(255,182,39,0.15);color:var(--warning);font-size:0.65rem;margin-left:4px;">🧾</span>' : ''}
+        </div>
+        <div class="cliente-detalle">${c.direccion || ''}</div>
+        <div class="cliente-detalle">📞 ${c.telefono || '—'} · ${c.contacto || ''}</div>
+        ${c.notas ? `<div class="cliente-detalle" style="font-style:italic;">📝 ${c.notas}</div>` : ''}
+        ${c.ubicacion ? `<div class="cliente-detalle" style="color:var(--accent2);">📍 Ubicación guardada</div>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function actualizarDashboard() {
+  const pedidos = App.pedidosList;
+
+  const totalVendido = pedidos.reduce((s, p) => s + (p.total || 0), 0);
+  const cobrado = pedidos.filter(p => p.estado === 'pagado').reduce((s, p) => s + (p.total || 0), 0);
+  const pendiente = pedidos.filter(p => p.estado === 'pendiente').reduce((s, p) => s + (p.total || 0), 0);
+  const consignacion = pedidos.filter(p => p.tipoVenta === 'consignacion').reduce((s, p) => s + (p.total || 0), 0);
+
+  const fmt = (v) => v.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 0 });
+
+  setText('stat-total-vendido', fmt(totalVendido));
+  setText('stat-cobrado', fmt(cobrado));
+  setText('stat-pendiente', fmt(pendiente));
+  setText('stat-consignacion', fmt(consignacion));
+  setText('stat-pedidos', pedidos.length);
+
+  const conteo = {};
+  pedidos.forEach(p => {
+    if (Array.isArray(p.productos)) {
+      p.productos.forEach(pr => { conteo[pr.producto] = (conteo[pr.producto] || 0) + (pr.cantidad || 0); });
+    }
+  });
+  const top = Object.entries(conteo).sort((a, b) => b[1] - a[1])[0];
+  setText('stat-top-producto', top ? top[0] : '—');
+
+  renderSeguimiento(pedidos);
+}
+
+function renderSeguimiento(pedidos) {
+  const container = document.getElementById('seguimiento-container');
+  if (!container) return;
+
+  const alertas = pedidos.filter(p => p.estado === 'pendiente' || p.estado === 'parcial');
+  if (alertas.length === 0) {
+    container.innerHTML = `<div style="padding:1rem;color:var(--text-muted);font-size:0.85rem;">✅ Todo al día</div>`;
+    return;
+  }
+
+  container.innerHTML = alertas.slice(0, 5).map(p => `
+    <div class="seguimiento-item" onclick="editarPedido('${p.id}')">
+      <span>${p.estado === 'pendiente' ? '⏳' : '🔄'}</span>
+      <div>
+        <div style="font-size:0.85rem;font-weight:600;">${p.clienteNombre || p.clienteEscuela || '—'}</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);">${p.estado}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ============================================================
+// REPORTE LOGÍSTICA — WhatsApp e Impresión
+// ============================================================
+function generarTextoLogistica() {
+  const pendientes = App.pedidosList.filter(p => p.estado === 'pendiente');
+
+  if (pendientes.length === 0) return null;
+
+  const hoy = new Date().toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+  let texto = `🚚 *RUTA JICMAR — ${hoy.toUpperCase()}*\n`;
+  texto += `${'─'.repeat(30)}\n\n`;
+
+  pendientes.forEach((p, i) => {
+    texto += `*📦 PARADA ${i + 1}*\n`;
+    texto += `🏫 *${p.clienteNombre || p.clienteEscuela || 'Sin nombre'}*\n`;
+    if (p.clienteDireccion) texto += `📍 Dirección: ${p.clienteDireccion}\n`;
+    if (p.clienteTelefono) texto += `📞 Tel: ${p.clienteTelefono}\n`;
+    if (p.clienteContacto) texto += `👤 Contacto: ${p.clienteContacto}\n`;
+    if (p.clienteUbicacion?.lat && p.clienteUbicacion?.lng) {
+      texto += `🗺️ Ubicación: https://maps.google.com/?q=${p.clienteUbicacion.lat},${p.clienteUbicacion.lng}\n`;
+    }
+    texto += `\n🛍️ *Productos:*\n`;
+    if (Array.isArray(p.productos)) {
+      p.productos.forEach(pr => {
+        texto += `  • ${pr.producto} × ${pr.cantidad} @ $${pr.precioUnitario}\n`;
+      });
+    }
+    const tipoLabel = p.tipoVenta === 'consignacion' ? '📦 CONSIGNACIÓN' : '💵 VENTA DIRECTA';
+    texto += `\n💼 Tipo: ${tipoLabel}\n`;
+    if (p.clienteRequiereFactura) texto += `⚠️ *REQUIERE FACTURA*\n`;
+    const totalFmt = (p.total || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+    texto += `💰 Total: ${totalFmt}\n`;
+    if (p.notas) texto += `📝 Notas: ${p.notas}\n`;
+    texto += `\n${'─'.repeat(30)}\n\n`;
+  });
+
+  texto += `_Total de paradas: ${pendientes.length}_\n`;
+  texto += `_Generado por Jicmar CRM_`;
+
+  return texto;
+}
+
+function compartirWhatsApp() {
+  const texto = generarTextoLogistica();
+  if (!texto) {
+    showToast('No hay pedidos pendientes para compartir', 'error');
+    return;
+  }
+  const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(texto)}`;
+  window.open(url, '_blank');
+}
+
+function imprimirRuta() {
+  const pendientes = App.pedidosList.filter(p => p.estado === 'pendiente');
+
+  if (pendientes.length === 0) {
+    showToast('No hay pedidos pendientes', 'error');
+    return;
+  }
+
+  const hoy = new Date().toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+  let html = `
+    <html><head><meta charset="UTF-8">
+    <style>
+      body { font-family: Arial, sans-serif; font-size: 13px; color: #111; padding: 20px; }
+      h1 { font-size: 18px; margin-bottom: 4px; }
+      .subtitulo { color: #555; font-size: 12px; margin-bottom: 20px; }
+      .parada { border: 1px solid #ddd; border-radius: 8px; padding: 14px; margin-bottom: 14px; page-break-inside: avoid; }
+      .parada-titulo { font-size: 15px; font-weight: bold; margin-bottom: 6px; }
+      .detalle { margin: 3px 0; }
+      .factura { background: #fff8e1; border-left: 3px solid #f5a623; padding: 5px 10px; margin: 6px 0; font-weight: bold; }
+      .productos-tabla { width: 100%; border-collapse: collapse; margin: 8px 0; }
+      .productos-tabla th { background: #f0f0f0; padding: 5px 8px; text-align: left; font-size: 12px; }
+      .productos-tabla td { padding: 5px 8px; border-top: 1px solid #eee; font-size: 12px; }
+      .tipo-venta { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; }
+      .directa { background: #e8f5e9; color: #2e7d32; }
+      .consignacion { background: #e3f2fd; color: #1565c0; }
+      .total { font-weight: bold; font-size: 14px; }
+      @media print { body { padding: 0; } }
+    </style></head><body>
+    <h1>🚚 Ruta Jicmar</h1>
+    <div class="subtitulo">${hoy} — ${pendientes.length} parada(s)</div>
+  `;
+
+  pendientes.forEach((p, i) => {
+    const totalFmt = (p.total || 0).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+    const tipoClass = p.tipoVenta === 'consignacion' ? 'consignacion' : 'directa';
+    const tipoLabel = p.tipoVenta === 'consignacion' ? 'CONSIGNACIÓN' : 'VENTA DIRECTA';
+
+    let mapsLink = '';
+    if (p.clienteUbicacion?.lat && p.clienteUbicacion?.lng) {
+      mapsLink = `<div class="detalle">🗺️ <a href="https://maps.google.com/?q=${p.clienteUbicacion.lat},${p.clienteUbicacion.lng}" target="_blank">Ver en Google Maps</a></div>`;
+    }
+
+    let productosHtml = '';
+    if (Array.isArray(p.productos) && p.productos.length > 0) {
+      productosHtml = `<table class="productos-tabla">
+        <tr><th>Producto</th><th>Cant.</th><th>P.Unit.</th><th>Subtotal</th></tr>
+        ${p.productos.map(pr => `<tr>
+          <td>${pr.producto}</td>
+          <td>${pr.cantidad}</td>
+          <td>$${pr.precioUnitario}</td>
+          <td>$${(pr.cantidad * pr.precioUnitario).toFixed(2)}</td>
+        </tr>`).join('')}
+      </table>`;
+    }
+
+    html += `
+      <div class="parada">
+        <div class="parada-titulo">📦 Parada ${i + 1} — ${p.clienteNombre || p.clienteEscuela || 'Sin nombre'}</div>
+        ${p.clienteDireccion ? `<div class="detalle">📍 ${p.clienteDireccion}</div>` : ''}
+        ${p.clienteTelefono ? `<div class="detalle">📞 ${p.clienteTelefono}</div>` : ''}
+        ${p.clienteContacto ? `<div class="detalle">👤 ${p.clienteContacto}</div>` : ''}
+        ${mapsLink}
+        ${p.clienteRequiereFactura ? `<div class="factura">⚠️ REQUIERE FACTURA</div>` : ''}
+        ${productosHtml}
+        <div class="detalle"><span class="tipo-venta ${tipoClass}">${tipoLabel}</span></div>
+        ${p.notas ? `<div class="detalle">📝 ${p.notas}</div>` : ''}
+        <div class="detalle total">Total: ${totalFmt}</div>
+      </div>`;
+  });
+
+  html += `<div style="margin-top:16px;color:#888;font-size:11px;">Generado por Jicmar CRM</div></body></html>`;
+
+  const ventana = window.open('', '_blank');
+  ventana.document.write(html);
+  ventana.document.close();
+  ventana.focus();
+  setTimeout(() => ventana.print(), 500);
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function val(id) { return document.getElementById(id)?.value?.trim() || ''; }
+function num(id) { return parseFloat(document.getElementById(id)?.value) || 0; }
+function setVal(id, v) { const el = document.getElementById(id); if (el) el.value = v ?? ''; }
+function setText(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
+
+// ============================================================
+// RESET FORMS
+// ============================================================
+function resetFormPedido() {
+  document.getElementById('form-pedido')?.reset();
+  App.fotoURL = null;
+  App.fotoOriginal = null;
+  App.modoEdicion = null;
+  App.ubicacionCapturada = null;
+  App.productosEnPedido = [];
+  const preview = document.getElementById('foto-preview');
+  if (preview) preview.innerHTML = '';
+  const aviso = document.getElementById('aviso-factura');
+  if (aviso) aviso.style.display = 'none';
+  renderProductosEnPedido();
+  document.getElementById('form-pedido-title').textContent = '📝 Nuevo Pedido';
+  const fechaEl = document.getElementById('fecha-pedido');
+  if (fechaEl) fechaEl.value = new Date().toISOString().split('T')[0];
+}
+
+function resetFormCliente() {
+  document.getElementById('form-cliente')?.reset();
+  App.modoEdicionCliente = null;
+  App.ubicacionClienteCapturada = null;
+  const locEl = document.getElementById('location-result-cliente');
+  if (locEl) { locEl.textContent = ''; locEl.style.display = 'none'; }
+  document.getElementById('form-cliente-title').textContent = '👤 Nuevo Cliente';
+}
+
+// ============================================================
+// UI
+// ============================================================
+function mostrarLogin() {
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+}
+
+function mostrarApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+
+  const nombre = App.perfil?.nombre || App.usuario?.email || 'U';
+  setText('user-name', nombre);
+  setText('user-avatar', nombre.charAt(0).toUpperCase());
+}
+
+function limpiarListeners() {
+  if (App.unsubscribePedidos) { App.unsubscribePedidos(); App.unsubscribePedidos = null; }
+  if (App.unsubscribeClientes) { App.unsubscribeClientes(); App.unsubscribeClientes = null; }
+}
+
+// ============================================================
+// UBICACIÓN GPS
+// ============================================================
+function capturarUbicacion(targetId, resultId) {
+  if (!navigator.geolocation) {
+    showToast('GPS no disponible', 'error');
+    return;
+  }
+  showToast('Obteniendo ubicación...', 'success');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      if (targetId === 'cliente') {
+        App.ubicacionClienteCapturada = loc;
+      } else {
+        App.ubicacionCapturada = loc;
+      }
+      const el = document.getElementById(resultId);
+      if (el) {
+        el.textContent = `📍 ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}`;
+        el.style.display = 'flex';
+      }
+      showToast('Ubicación capturada ✓', 'success');
+    },
+    () => showToast('No se pudo obtener la ubicación', 'error'),
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+// ============================================================
+// EVENTOS
+// ============================================================
+function inicializarEventos() {
+
+  // Login
+  document.getElementById('login-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('btn-login');
+    btn.disabled = true;
+    btn.textContent = 'Entrando...';
+    const email = document.getElementById('login-email')?.value?.trim();
+    const password = document.getElementById('login-password')?.value;
+    const result = await Auth.login(email, password);
+    if (!result.success) {
+      showToast(result.error, 'error');
+      btn.disabled = false;
+      btn.textContent = 'Entrar →';
+    }
+  });
+
+  // Logout
+  document.getElementById('user-chip')?.addEventListener('click', mostrarModalLogout);
+  document.getElementById('btn-logout-cancelar')?.addEventListener('click', ocultarModalLogout);
+  document.getElementById('btn-logout-confirmar')?.addEventListener('click', async () => {
+    ocultarModalLogout();
+    await Auth.logout();
+  });
+  document.getElementById('modal-logout')?.addEventListener('click', (e) => {
+    if (e.target === document.getElementById('modal-logout')) ocultarModalLogout();
+  });
+
+  // Submit pedido
+  document.getElementById('form-pedido')?.addEventListener('submit', handleSubmitPedido);
+
+  // Submit cliente
+  document.getElementById('form-cliente')?.addEventListener('submit', handleSubmitCliente);
+
+  // Foto
+  document.getElementById('foto-input')?.addEventListener('change', handleFotoChange);
+
+  // Navegación inferior
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const page = btn.dataset.page;
+      if (page) window.navigateTo(page);
+    });
+  });
+
+  // Filtros de pedidos
+  document.querySelectorAll('.filtro-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.filtro-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      App.filtroActivo = chip.dataset.estado;
+      renderPedidos();
+    });
+  });
+
+  // Búsqueda pedidos
+  document.getElementById('buscar-pedidos')?.addEventListener('input', (e) => {
+    App.busqueda = e.target.value;
+    renderPedidos();
+  });
+
+  // Búsqueda clientes
+  document.getElementById('buscar-clientes')?.addEventListener('input', () => renderClientes());
+
+  // Toggle consignación
+  document.querySelectorAll('input[name="tipoVenta"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const sec = document.getElementById('consignacion-section');
+      if (sec) sec.style.display = radio.value === 'consignacion' ? 'block' : 'none';
+    });
+  });
+  const consigSec = document.getElementById('consignacion-section');
+  if (consigSec) consigSec.style.display = 'none';
+
+  // Ubicación cliente
+  document.getElementById('btn-ubicacion-cliente')?.addEventListener('click', () => {
+    capturarUbicacion('cliente', 'location-result-cliente');
+  });
+
+  // Botón nuevo cliente
+  document.getElementById('btn-nuevo-cliente')?.addEventListener('click', () => {
+    App.modoEdicionCliente = null;
+    window.navigateTo('nuevo-cliente');
+  });
+
+  // Agregar producto
+  document.getElementById('btn-agregar-producto')?.addEventListener('click', agregarProductoVacio);
+
+  // Selector de cliente → aviso factura
+  document.getElementById('pedido-cliente-id')?.addEventListener('change', (e) => {
+    actualizarAvisoFactura(e.target.value);
+  });
+
+  // Reportes
+  document.querySelectorAll('.reporte-card').forEach(card => {
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.reporte-card').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+    });
+  });
+
+  document.getElementById('btn-compartir-whatsapp')?.addEventListener('click', compartirWhatsApp);
+  document.getElementById('btn-imprimir-ruta')?.addEventListener('click', imprimirRuta);
+  document.getElementById('btn-generar-pdf')?.addEventListener('click', generarPDF);
+
+  // Init productos vacíos
+  renderProductosEnPedido();
+
+  // Fecha de hoy por defecto
+  const fechaEl = document.getElementById('fecha-pedido');
+  if (fechaEl && !fechaEl.value) fechaEl.value = new Date().toISOString().split('T')[0];
+}
+
+// ============================================================
+// GENERAR PDF (reportes)
+// ============================================================
+async function generarPDF() {
+  const tipoCard = document.querySelector('.reporte-card.selected');
+  const tipo = tipoCard?.dataset.tipo || 'ventas';
+  const inicio = document.getElementById('fecha-inicio')?.value;
+  const fin = document.getElementById('fecha-fin')?.value;
+
+  if (!inicio || !fin) {
+    showToast('Selecciona rango de fechas', 'error');
+    return;
+  }
+
+  showToast('Generando reporte...', 'success');
+
+  const pedidos = await Pedidos.obtenerPorFecha(inicio, fin);
+  const hoy = new Date().toLocaleDateString('es-MX');
+
+  let html = `<html><head><meta charset="UTF-8"><style>
+    body{font-family:Arial,sans-serif;font-size:13px;padding:20px;}
+    h1{font-size:18px;} table{width:100%;border-collapse:collapse;margin-top:12px;}
+    th{background:#f0f0f0;padding:6px;text-align:left;font-size:12px;}
+    td{padding:6px;border-top:1px solid #eee;font-size:12px;}
+    .total{font-weight:bold;}
+  </style></head><body>
+  <h1>Reporte Jicmar — ${tipo}</h1>
+  <p>Período: ${inicio} al ${fin} · Generado: ${hoy}</p>
+  <table><tr><th>Cliente</th><th>Productos</th><th>Tipo</th><th>Estado</th><th>Total</th></tr>`;
+
+  let gran_total = 0;
+  pedidos.forEach(p => {
+    const total = p.total || 0;
+    gran_total += total;
+    const productosStr = Array.isArray(p.productos) ? p.productos.map(pr => `${pr.producto}×${pr.cantidad}`).join(', ') : '';
+    html += `<tr>
+      <td>${p.clienteNombre || '—'}</td>
+      <td>${productosStr}</td>
+      <td>${p.tipoVenta || '—'}</td>
+      <td>${p.estado || '—'}</td>
+      <td>$${total.toLocaleString('es-MX')}</td>
+    </tr>`;
+  });
+
+  html += `<tr><td colspan="4" class="total">TOTAL</td><td class="total">$${gran_total.toLocaleString('es-MX')}</td></tr>`;
+  html += `</table></body></html>`;
+
+  const v = window.open('', '_blank');
+  v.document.write(html);
+  v.document.close();
+  v.focus();
+  setTimeout(() => v.print(), 500);
+}
+
+// ============================================================
+// TOAST
+// ============================================================
+function showToast(msg, tipo = 'info') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${tipo}`;
+  toast.textContent = msg;
+  container.appendChild(toast);
+  setTimeout(() => toast.classList.add('show'), 10);
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+window.showToast = showToast;
