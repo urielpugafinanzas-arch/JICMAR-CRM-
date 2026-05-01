@@ -306,9 +306,6 @@ async function handleSubmitPedido(e) {
       vendedorNombre: App.perfil?.nombre || '',
     };
 
-    if (tipoVenta === 'consignacion') {
-      datos.fechaEntrega = val('fechaEntregaConsig') || null;
-    }
 
     if (App.fotoURL && App.fotoURL !== App.fotoOriginal) {
       datos.foto = App.fotoURL;
@@ -540,22 +537,57 @@ window.cerrarModalEntrega = function () {
   document.getElementById('modal-entrega').style.display = 'none';
   pedidoEnModal = null;
 };
-
 window.calcularDiferenciaModal = function () {
   const pedido = App.pedidosList.find(p => p.id === pedidoEnModal);
   if (!pedido) return;
 
   const productos = Array.isArray(pedido.productos) ? pedido.productos : [];
   let totalEntregado = 0;
+
   productos.forEach((pr, i) => {
     const cantInput = document.getElementById(`entrega-cant-${i}`);
     const cant = parseFloat(cantInput?.value) || 0;
     totalEntregado += cant * (pr.precioUnitario || 0);
   });
 
+  // Actualizar total visible
   const totalEl = document.getElementById('modal-total-calculado');
   if (totalEl) totalEl.textContent = totalEntregado.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 
+  // Solo mostrar diferencia si es venta directa
+  const esConsig = pedido.tipoVenta === 'consignacion';
+  const diffInfo = document.getElementById('modal-diferencia-info');
+  if (!diffInfo) return;
+
+  if (esConsig) {
+    diffInfo.style.display = 'none';
+    return;
+  }
+
+  const montoInput = document.getElementById('modal-monto-cobrado');
+  if (!montoInput?.value) {
+    diffInfo.style.display = 'none';
+    return;
+  }
+
+  const montoCobrado = parseFloat(montoInput.value) || 0;
+  const diff = montoCobrado - totalEntregado;
+  diffInfo.style.display = 'block';
+
+  if (Math.abs(diff) < 0.01) {
+    diffInfo.style.background = 'rgba(34,197,94,0.1)';
+    diffInfo.style.color = '#4ade80';
+    diffInfo.textContent = '✅ Cobro exacto. Venta cerrada.';
+  } else if (diff < 0) {
+    diffInfo.style.background = 'rgba(239,68,68,0.1)';
+    diffInfo.style.color = '#f87171';
+    diffInfo.textContent = `🔴 Queda deuda de ${Math.abs(diff).toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}`;
+  } else {
+    diffInfo.style.background = 'rgba(34,197,94,0.1)';
+    diffInfo.style.color = '#4ade80';
+    diffInfo.textContent = `✅ Pago con excedente de ${diff.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}. Venta cerrada.`;
+  }
+};
   // Solo calcular diferencia si es venta directa
   const esConsig = pedido.tipoVenta === 'consignacion';
   if (esConsig) return;
@@ -799,6 +831,7 @@ function iniciarListeners() {
   App.unsubscribePedidos = Pedidos.escuchar(filtros, (pedidos) => {
     App.pedidosList = pedidos;
     renderPedidos();
+    renderConsignas();
     actualizarDashboard();
   });
 
@@ -914,7 +947,104 @@ function renderPedidos() {
       </div>`;
   }).join('');
 }
+// ============================================================
+// RENDER CONSIGNAS
+// ============================================================
+let filtroConsignas = 'activas';
 
+function renderConsignas() {
+  const container = document.getElementById('consignas-container');
+  if (!container) return;
+
+  // Filtrar solo consignaciones entregadas
+  let lista = App.pedidosList.filter(p => p.tipoVenta === 'consignacion' && p.estado !== 'pendiente' && p.estado !== 'cancelado');
+
+  // Aplicar filtro de pestaña
+  if (filtroConsignas === 'activas') {
+    lista = lista.filter(p => p.estado === 'entregado');
+  } else if (filtroConsignas === 'parcial') {
+    lista = lista.filter(p => p.estado === 'parcial');
+  } else if (filtroConsignas === 'liquidadas') {
+    lista = lista.filter(p => p.estado === 'pagado');
+  }
+
+  // Búsqueda
+  const q = document.getElementById('buscar-consignas')?.value?.toLowerCase() || '';
+  if (q) {
+    lista = lista.filter(p => p.clienteNombre?.toLowerCase().includes(q));
+  }
+
+  // Badge contador — mostrar activas + parciales
+  const activas = App.pedidosList.filter(p =>
+    p.tipoVenta === 'consignacion' &&
+    (p.estado === 'entregado' || p.estado === 'parcial')
+  ).length;
+  const badge = document.getElementById('badge-consignas');
+  if (badge) {
+    badge.textContent = activas;
+    badge.style.display = activas > 0 ? 'inline-block' : 'none';
+  }
+  const statEl = document.getElementById('stat-consignas-activas');
+  if (statEl) statEl.textContent = activas;
+
+  if (lista.length === 0) {
+    container.innerHTML = `<div style="text-align:center;padding:2rem;color:var(--text-muted);">Sin consignas en este filtro</div>`;
+    return;
+  }
+
+  container.innerHTML = lista.map(p => {
+    const fechaPedido = p.fechaPedido || (p.createdAt instanceof Date ? p.createdAt.toLocaleDateString('es-MX') : '—');
+    const fechaEntrega = p.fechaEntregadoReal || '—';
+
+    // Calcular días entre pedido y entrega
+    let diasTexto = '';
+    if (p.fechaPedido && p.fechaEntregadoReal) {
+      const diff = Math.round((new Date(p.fechaEntregadoReal) - new Date(p.fechaPedido)) / (1000 * 60 * 60 * 24));
+      diasTexto = `<span style="font-size:0.72rem;color:var(--text-muted);">⏱ ${diff} día${diff !== 1 ? 's' : ''} en entregar</span>`;
+    }
+
+    const totalEntregado = p.totalEntregado || p.total || 0;
+    const yaCobrado = p.montoCobrado || 0;
+    const saldoPendiente = totalEntregado - yaCobrado;
+
+    const estadoClass = {
+      entregado: 'badge-entregado',
+      parcial: 'badge-parcial',
+      pagado: 'badge-pagado',
+    }[p.estado] || '';
+
+    // Productos entregados reales
+    const productosEntregados = Array.isArray(p.productosEntregados) ? p.productosEntregados : (Array.isArray(p.productos) ? p.productos : []);
+    const productosStr = productosEntregados.map(pr => {
+      const cant = pr.cantidadEntregada ?? pr.cantidad;
+      return `${pr.producto} ×${cant}`;
+    }).join(', ');
+
+    const puedecobrar = p.estado === 'entregado' || p.estado === 'parcial';
+
+    return `
+      <div class="pedido-card" data-id="${p.id}">
+        <div class="pedido-header">
+          <div>
+            <div class="pedido-escuela">${p.clienteNombre || '—'}</div>
+            <div class="pedido-meta">${productosStr}</div>
+            ${diasTexto}
+          </div>
+          <span class="badge ${estadoClass}">${p.estado}</span>
+        </div>
+
+        <div style="padding:0.5rem 1rem;font-size:0.8rem;border-top:1px solid var(--border);">
+          <div style="display:flex;justify-content:space-between;margin-bottom:0.25rem;">
+            <span style="color:var(--text-muted);">📅 Pedido:</span>
+            <span>${fechaPedido}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:0.25rem;">
+            <span style="color:var(--text-muted);">🚚 Entregado:</span>
+            <span>${fechaEntrega}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:0.25rem;">
+            <span style="color:var(--text-muted);">💰 Total entregado:</span>
+            <span style="font-weight:600;">${totalEntregado.toLocaleString('es-MX', { style: 'currency', currency: '
 // ============================================================
 // RENDER CLIENTES
 // ============================================================
@@ -1297,6 +1427,17 @@ function inicializarEventos() {
   });
 
   document.getElementById('buscar-clientes')?.addEventListener('input', () => renderClientes());
+
+  document.getElementById('buscar-consignas')?.addEventListener('input', () => renderConsignas());
+
+  document.querySelectorAll('.filtro-chip-consig').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.filtro-chip-consig').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      filtroConsignas = chip.dataset.filtro;
+      renderConsignas();
+    });
+  });
 
   document.querySelectorAll('input[name="tipoVenta"]').forEach(radio => {
     radio.addEventListener('change', () => {
