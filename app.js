@@ -1012,7 +1012,24 @@ function renderConsignas() {
           </div>
           <div style="display:flex;justify-content:space-between;margin-bottom:0.25rem;">
             <span style="color:var(--text-muted);">💰 Total entregado:</span>
-            <span style="font-weight:600;">${totalEntregado.toLocaleString('es-MX', { style: 'currency', currency: '
+            <span style="font-weight:600;">${totalEntregado.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:0.25rem;">
+            <span style="color:var(--text-muted);">💵 Ya cobrado:</span>
+            <span style="color:#4ade80;">${yaCobrado.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;">
+            <span style="color:var(--text-muted);">🔴 Saldo pendiente:</span>
+            <span style="color:#f87171;font-weight:700;">${saldoPendiente.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' })}</span>
+          </div>
+        </div>
+        <div class="pedido-actions">
+          ${puedecobrar ? `<button class="btn btn-primary btn-sm" onclick="abrirModalCobro('${p.id}')">💰 Cobrar</button>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
 // ============================================================
 // RENDER CLIENTES
 // ============================================================
