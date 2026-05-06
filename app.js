@@ -1,8 +1,4 @@
-// ============================================================
-// app.js — Jicmar CRM
-// ============================================================
-
-import { Auth, Config, Pedidos, Clientes, Storage } from './firebase.js';
+, Pedidos, Clientes, Storage } from './firebase.js';
 
 // ============================================================
 // CATÁLOGO DE PRODUCTOS
@@ -1447,14 +1443,6 @@ function inicializarEventos() {
   document.getElementById('pedido-cliente-id')?.addEventListener('change', (e) => {
     actualizarAvisoFactura(e.target.value);
   });
-
-  document.querySelectorAll('.reporte-card').forEach(card => {
-    card.addEventListener('click', () => {
-      document.querySelectorAll('.reporte-card').forEach(c => c.classList.remove('selected'));
-      card.classList.add('selected');
-    });
-  });
-
   document.getElementById('btn-compartir-whatsapp')?.addEventListener('click', compartirWhatsApp);
   document.getElementById('btn-imprimir-ruta')?.addEventListener('click', imprimirRuta);
   document.getElementById('btn-generar-pdf')?.addEventListener('click', generarPDF);
@@ -1466,59 +1454,396 @@ function inicializarEventos() {
 }
 
 // ============================================================
-// GENERAR PDF (reportes)
+// GENERAR PDF — Selección múltiple + diseño profesional
 // ============================================================
 async function generarPDF() {
-  const tipoCard = document.querySelector('.reporte-card.selected');
-  const tipo = tipoCard?.dataset.tipo || 'ventas';
+  const seleccionadas = [...document.querySelectorAll('.reporte-card.selected')]
+    .map(c => c.dataset.tipo);
+
+  if (seleccionadas.length === 0) {
+    showToast('Selecciona al menos un tipo de reporte', 'error');
+    return;
+  }
+
   const inicio = document.getElementById('fecha-inicio')?.value;
   const fin = document.getElementById('fecha-fin')?.value;
-
   if (!inicio || !fin) {
     showToast('Selecciona rango de fechas', 'error');
     return;
   }
 
   showToast('Generando reporte...', 'success');
-
   const pedidos = await Pedidos.obtenerPorFecha(inicio, fin);
-  const hoy = new Date().toLocaleDateString('es-MX');
+  const hoy = new Date().toLocaleDateString('es-MX', { year:'numeric', month:'long', day:'numeric' });
+  const inicioFmt = new Date(inicio + 'T12:00:00').toLocaleDateString('es-MX', { year:'numeric', month:'long', day:'numeric' });
+  const finFmt = new Date(fin + 'T12:00:00').toLocaleDateString('es-MX', { year:'numeric', month:'long', day:'numeric' });
 
-  let html = `<html><head><meta charset="UTF-8"><style>
-    body{font-family:Arial,sans-serif;font-size:13px;padding:20px;}
-    h1{font-size:18px;} table{width:100%;border-collapse:collapse;margin-top:12px;}
-    th{background:#f0f0f0;padding:6px;text-align:left;font-size:12px;}
-    td{padding:6px;border-top:1px solid #eee;font-size:12px;}
-    .total{font-weight:bold;}
+  let seccionesHTML = '';
+  for (const tipo of seleccionadas) {
+    if (tipo === 'ventas')   seccionesHTML += generarSeccionVentas(pedidos);
+    if (tipo === 'clientes') seccionesHTML += generarSeccionClientes(pedidos);
+    if (tipo === 'consig')   seccionesHTML += generarSeccionConsignas(pedidos);
+    if (tipo === 'perdidos') seccionesHTML += generarSeccionInactivos();
+  }
+
+  const html = `
+  <html><head><meta charset="UTF-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Arial', sans-serif; font-size: 12px; color: #1a1a1a; background: #fff; padding: 24px; }
+
+    /* ENCABEZADO */
+    .pdf-header { display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 3px solid #d4a017; padding-bottom: 14px; margin-bottom: 20px; }
+    .pdf-logo-area { display: flex; align-items: center; gap: 12px; }
+    .pdf-logo-text { font-size: 26px; font-weight: 900; color: #1a1a1a; letter-spacing: -1px; }
+    .pdf-logo-sub { font-size: 10px; color: #888; margin-top: 2px; }
+    .pdf-header-right { text-align: right; }
+    .pdf-header-right .periodo { font-size: 11px; color: #555; margin-top: 4px; }
+    .pdf-header-right .generado { font-size: 10px; color: #aaa; margin-top: 2px; }
+
+    /* SECCIONES */
+    .seccion { margin-bottom: 32px; page-break-inside: avoid; }
+    .seccion-titulo { font-size: 15px; font-weight: 700; color: #fff;
+      background: #1a1a1a; padding: 8px 14px; border-radius: 6px 6px 0 0;
+      display: flex; align-items: center; gap: 8px; }
+    .seccion-subtitulo { font-size: 11px; color: #555; background: #f5f5f5;
+      padding: 5px 14px; border-left: 3px solid #d4a017; margin-bottom: 10px; }
+
+    /* RESUMEN BADGES */
+    .resumen-badges { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+    .badge-stat { padding: 6px 14px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+    .badge-verde { background: #e8f5e9; color: #2e7d32; }
+    .badge-azul  { background: #e3f2fd; color: #1565c0; }
+    .badge-naranja { background: #fff8e1; color: #e65100; }
+
+    /* TABLAS */
+    table { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
+    thead tr { background: #f0f0f0; }
+    th { padding: 7px 10px; text-align: left; font-size: 11px; font-weight: 700;
+      color: #333; border-bottom: 2px solid #ddd; }
+    td { padding: 6px 10px; font-size: 11px; border-bottom: 1px solid #eee; vertical-align: top; }
+    tr:nth-child(even) td { background: #fafafa; }
+    tr:hover td { background: #f5f5f5; }
+    .col-num { text-align: right; }
+    .col-center { text-align: center; }
+
+    /* FILA TOTALES */
+    .fila-total td { background: #1a1a1a !important; color: #fff !important;
+      font-weight: 700; font-size: 12px; padding: 8px 10px; }
+
+    /* BLOQUE POR CLIENTE */
+    .cliente-bloque { border: 1px solid #e0e0e0; border-radius: 8px;
+      margin-bottom: 14px; overflow: hidden; }
+    .cliente-bloque-header { background: #f8f8f8; padding: 8px 14px;
+      display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid #e0e0e0; }
+    .cliente-nombre { font-weight: 700; font-size: 13px; color: #1a1a1a; }
+    .cliente-total-badge { background: #d4a017; color: #fff; padding: 3px 10px;
+      border-radius: 12px; font-size: 11px; font-weight: 700; }
+
+    /* PIE DE PÁGINA */
+    .pdf-footer { margin-top: 30px; padding-top: 10px; border-top: 1px solid #eee;
+      text-align: center; font-size: 10px; color: #aaa; }
+
+    @media print {
+      body { padding: 12px; }
+      .seccion { page-break-inside: avoid; }
+    }
   </style></head><body>
-  <h1>Reporte Jicmar — ${tipo}</h1>
-  <p>Período: ${inicio} al ${fin} · Generado: ${hoy}</p>
-  <table><tr><th>Cliente</th><th>Productos</th><th>Tipo</th><th>Estado</th><th>Total</th></tr>`;
 
-  let gran_total = 0;
-  pedidos.forEach(p => {
-    const total = p.total || 0;
-    gran_total += total;
-    const productosStr = Array.isArray(p.productos) ? p.productos.map(pr => `${pr.producto}×${pr.cantidad}`).join(', ') : '';
-    html += `<tr>
-      <td>${p.clienteNombre || '—'}</td>
-      <td>${productosStr}</td>
-      <td>${p.tipoVenta || '—'}</td>
-      <td>${p.estado || '—'}</td>
-      <td>$${total.toLocaleString('es-MX')}</td>
-    </tr>`;
-  });
+  <!-- ENCABEZADO -->
+  <div class="pdf-header">
+    <div class="pdf-logo-area">
+      <img src="./icon-192.png" style="width:52px;height:52px;border-radius:10px;object-fit:contain;" onerror="this.style.display='none'" />
+      <div>
+        <div class="pdf-logo-text">JICMAR</div>
+        <div class="pdf-logo-sub">Sistema de gestión de ventas</div>
+      </div>
+    </div>
+    <div class="pdf-header-right">
+      <div style="font-size:13px;font-weight:700;">Reporte de ventas</div>
+      <div class="periodo">📅 ${inicioFmt} — ${finFmt}</div>
+      <div class="generado">Generado el ${hoy}</div>
+    </div>
+  </div>
 
-  html += `<tr><td colspan="4" class="total">TOTAL</td><td class="total">$${gran_total.toLocaleString('es-MX')}</td></tr>`;
-  html += `</table></body></html>`;
+  ${seccionesHTML}
+
+  <div class="pdf-footer">
+    Jicmar CRM · Reporte generado automáticamente · ${hoy}
+  </div>
+  </body></html>`;
 
   const v = window.open('', '_blank');
   v.document.write(html);
   v.document.close();
   v.focus();
-  setTimeout(() => v.print(), 500);
+  setTimeout(() => v.print(), 600);
 }
 
+// ── Sección: VENTAS (productos ordenados de mayor a menor) ──
+function generarSeccionVentas(pedidos) {
+  // Solo pedidos con algo entregado o pagado
+  const relevantes = pedidos.filter(p =>
+    ['pagado','parcial','entregado'].includes(p.estado)
+  );
+
+  const mapa = {};
+  relevantes.forEach(p => {
+    const prods = p.productosEntregados || p.productos || [];
+    prods.forEach(pr => {
+      if (!pr.producto) return;
+      if (!mapa[pr.producto]) mapa[pr.producto] = { consignado:0, vendido:0, precio:0, total:0 };
+      const cantVendida  = pr.cantidadEntregada ?? pr.cantidad ?? 0;
+      const cantPedida   = pr.cantidad ?? cantVendida;
+      mapa[pr.producto].consignado += cantPedida;
+      mapa[pr.producto].vendido    += cantVendida;
+      mapa[pr.producto].precio      = pr.precioUnitario ?? 0;
+      mapa[pr.producto].total      += cantVendida * (pr.precioUnitario ?? 0);
+    });
+  });
+
+  const filas = Object.entries(mapa)
+    .sort((a,b) => b[1].vendido - a[1].vendido);
+
+  if (filas.length === 0) return `<div class="seccion"><div class="seccion-titulo">📊 Ventas por producto</div><p style="padding:14px;color:#888;">Sin ventas en este período.</p></div>`;
+
+  const totalVendido   = filas.reduce((s,[,v]) => s + v.vendido, 0);
+  const totalConsig    = filas.reduce((s,[,v]) => s + v.consignado, 0);
+  const totalDevuelto  = totalConsig - totalVendido;
+  const totalImporte   = filas.reduce((s,[,v]) => s + v.total, 0);
+
+  // Calcular cobrado vs en calle
+  const cobrado = pedidos.filter(p => p.estado === 'pagado')
+    .reduce((s,p) => s + (p.totalEntregado || p.total || 0), 0);
+  const enCalle = pedidos.filter(p => p.estado === 'entregado' && p.tipoVenta === 'consignacion')
+    .reduce((s,p) => s + (p.totalEntregado || p.total || 0), 0);
+
+  const fmt = v => v.toLocaleString('es-MX', { style:'currency', currency:'MXN' });
+
+  let html = `
+  <div class="seccion">
+    <div class="seccion-titulo">📊 Ventas por producto</div>
+    <div class="seccion-subtitulo">Ordenado de mayor a menor cantidad vendida · ${relevantes.length} pedido(s) en el período</div>
+    <div class="resumen-badges">
+      <span class="badge-stat badge-verde">✅ Cobrado: ${fmt(cobrado)}</span>
+      <span class="badge-stat badge-azul">📦 En consigna (calle): ${fmt(enCalle)}</span>
+      <span class="badge-stat badge-naranja">💰 Total facturado: ${fmt(cobrado + enCalle)}</span>
+    </div>
+    <table>
+      <thead><tr>
+        <th>#</th>
+        <th>Producto</th>
+        <th class="col-num">Consignado</th>
+        <th class="col-num">Vendido</th>
+        <th class="col-num">Devuelto</th>
+        <th class="col-num">P. Unit.</th>
+        <th class="col-num">Total</th>
+      </tr></thead>
+      <tbody>`;
+
+  filas.forEach(([nombre, v], i) => {
+    const devuelto = v.consignado - v.vendido;
+    html += `<tr>
+      <td class="col-center">${i+1}</td>
+      <td>${nombre}</td>
+      <td class="col-num">${v.consignado}</td>
+      <td class="col-num"><strong>${v.vendido}</strong></td>
+      <td class="col-num" style="color:${devuelto > 0 ? '#e65100' : '#2e7d32'};">${devuelto}</td>
+      <td class="col-num">${fmt(v.precio)}</td>
+      <td class="col-num"><strong>${fmt(v.total)}</strong></td>
+    </tr>`;
+  });
+
+  html += `</tbody>
+    <tfoot><tr class="fila-total">
+      <td colspan="2">TOTALES</td>
+      <td class="col-num">${totalConsig}</td>
+      <td class="col-num">${totalVendido}</td>
+      <td class="col-num">${totalDevuelto}</td>
+      <td></td>
+      <td class="col-num">${fmt(totalImporte)}</td>
+    </tr></tfoot>
+    </table>
+  </div>`;
+  return html;
+}
+
+// ── Sección: CLIENTES (de mayor a menor compra) ──
+function generarSeccionClientes(pedidos) {
+  const relevantes = pedidos.filter(p =>
+    ['pagado','parcial','entregado'].includes(p.estado)
+  );
+
+  const mapaClientes = {};
+  relevantes.forEach(p => {
+    const id = p.clienteId || p.clienteNombre || 'desconocido';
+    if (!mapaClientes[id]) {
+      mapaClientes[id] = { nombre: p.clienteNombre || '—', productos: {}, total: 0 };
+    }
+    const prods = p.productosEntregados || p.productos || [];
+    prods.forEach(pr => {
+      if (!pr.producto) return;
+      if (!mapaClientes[id].productos[pr.producto]) {
+        mapaClientes[id].productos[pr.producto] = { vendido: 0, precio: 0, total: 0 };
+      }
+      const cant = pr.cantidadEntregada ?? pr.cantidad ?? 0;
+      mapaClientes[id].productos[pr.producto].vendido += cant;
+      mapaClientes[id].productos[pr.producto].precio   = pr.precioUnitario ?? 0;
+      mapaClientes[id].productos[pr.producto].total   += cant * (pr.precioUnitario ?? 0);
+      mapaClientes[id].total += cant * (pr.precioUnitario ?? 0);
+    });
+  });
+
+  const clientesOrdenados = Object.values(mapaClientes)
+    .sort((a,b) => b.total - a.total);
+
+  if (clientesOrdenados.length === 0) return `<div class="seccion"><div class="seccion-titulo">👤 Compras por cliente</div><p style="padding:14px;color:#888;">Sin datos en este período.</p></div>`;
+
+  const fmt = v => v.toLocaleString('es-MX', { style:'currency', currency:'MXN' });
+  const granTotal = clientesOrdenados.reduce((s,c) => s + c.total, 0);
+
+  let html = `
+  <div class="seccion">
+    <div class="seccion-titulo">👤 Compras por cliente</div>
+    <div class="seccion-subtitulo">Ordenado del cliente que más compró al que menos · Gran total: ${fmt(granTotal)}</div>`;
+
+  clientesOrdenados.forEach((cliente, idx) => {
+    const prodOrdenados = Object.entries(cliente.productos)
+      .sort((a,b) => b[1].vendido - a[1].vendido);
+
+    html += `
+    <div class="cliente-bloque">
+      <div class="cliente-bloque-header">
+        <div>
+          <span style="color:#888;font-size:10px;margin-right:6px;">#${idx+1}</span>
+          <span class="cliente-nombre">${cliente.nombre}</span>
+        </div>
+        <span class="cliente-total-badge">${fmt(cliente.total)}</span>
+      </div>
+      <table>
+        <thead><tr>
+          <th>#</th><th>Producto</th>
+          <th class="col-num">Cantidad</th>
+          <th class="col-num">P. Unit.</th>
+          <th class="col-num">Total</th>
+        </tr></thead>
+        <tbody>`;
+
+    prodOrdenados.forEach(([nombre, v], i) => {
+      html += `<tr>
+        <td class="col-center">${i+1}</td>
+        <td>${nombre}</td>
+        <td class="col-num">${v.vendido}</td>
+        <td class="col-num">${fmt(v.precio)}</td>
+        <td class="col-num"><strong>${fmt(v.total)}</strong></td>
+      </tr>`;
+    });
+
+    html += `</tbody></table></div>`;
+  });
+
+  html += `</div>`;
+  return html;
+}
+
+// ── Sección: CONSIGNACIONES EN CALLE ──
+function generarSeccionConsignas(pedidos) {
+  const enCalle = pedidos.filter(p =>
+    p.tipoVenta === 'consignacion' && ['entregado','parcial'].includes(p.estado)
+  );
+
+  const fmt = v => v.toLocaleString('es-MX', { style:'currency', currency:'MXN' });
+
+  if (enCalle.length === 0) return `<div class="seccion"><div class="seccion-titulo">📦 Consignaciones en calle</div><p style="padding:14px;color:#888;">Sin consignaciones activas en este período.</p></div>`;
+
+  const totalEnCalle = enCalle.reduce((s,p) => s + (p.totalEntregado || p.total || 0), 0);
+  const totalCobrado = enCalle.reduce((s,p) => s + (p.montoCobrado || 0), 0);
+  const totalPendiente = totalEnCalle - totalCobrado;
+
+  let html = `
+  <div class="seccion">
+    <div class="seccion-titulo">📦 Consignaciones en calle</div>
+    <div class="seccion-subtitulo">Producto entregado aún no cobrado totalmente</div>
+    <div class="resumen-badges">
+      <span class="badge-stat badge-azul">📦 Total entregado: ${fmt(totalEnCalle)}</span>
+      <span class="badge-stat badge-verde">✅ Ya cobrado: ${fmt(totalCobrado)}</span>
+      <span class="badge-stat badge-naranja">🔴 Pendiente por cobrar: ${fmt(totalPendiente)}</span>
+    </div>
+    <table>
+      <thead><tr>
+        <th>Cliente</th><th>Productos</th>
+        <th class="col-num">Entregado</th>
+        <th class="col-num">Cobrado</th>
+        <th class="col-num">Pendiente</th>
+        <th>Estado</th>
+      </tr></thead><tbody>`;
+
+  enCalle.forEach(p => {
+    const entregado  = p.totalEntregado || p.total || 0;
+    const cobrado    = p.montoCobrado || 0;
+    const pendiente  = entregado - cobrado;
+    const prods = (p.productosEntregados || p.productos || [])
+      .map(pr => `${pr.producto} ×${pr.cantidadEntregada ?? pr.cantidad}`).join(', ');
+    html += `<tr>
+      <td><strong>${p.clienteNombre || '—'}</strong></td>
+      <td style="font-size:10px;color:#555;">${prods}</td>
+      <td class="col-num">${fmt(entregado)}</td>
+      <td class="col-num" style="color:#2e7d32;">${fmt(cobrado)}</td>
+      <td class="col-num" style="color:${pendiente > 0 ? '#e65100' : '#2e7d32'};font-weight:700;">${fmt(pendiente)}</td>
+      <td class="col-center"><span style="background:${p.estado==='parcial'?'#fff8e1':'#e3f2fd'};color:${p.estado==='parcial'?'#e65100':'#1565c0'};padding:2px 8px;border-radius:10px;font-size:10px;">${p.estado}</span></td>
+    </tr>`;
+  });
+
+  html += `</tbody>
+    <tfoot><tr class="fila-total">
+      <td colspan="2">TOTALES</td>
+      <td class="col-num">${fmt(totalEnCalle)}</td>
+      <td class="col-num">${fmt(totalCobrado)}</td>
+      <td class="col-num">${fmt(totalPendiente)}</td>
+      <td></td>
+    </tr></tfoot>
+    </table>
+  </div>`;
+  return html;
+}
+
+// ── Sección: INACTIVOS ──
+function generarSeccionInactivos() {
+  const hace30 = new Date();
+  hace30.setDate(hace30.getDate() - 30);
+
+  const clientesActivos = new Set(
+    App.pedidosList
+      .filter(p => p.createdAt instanceof Date && p.createdAt > hace30)
+      .map(p => p.clienteId)
+  );
+
+  const inactivos = App.clientesList.filter(c => !clientesActivos.has(c.id));
+
+  if (inactivos.length === 0) return `<div class="seccion"><div class="seccion-titulo">😴 Clientes inactivos</div><p style="padding:14px;color:#888;">Todos los clientes tuvieron actividad en los últimos 30 días. ¡Excelente!</p></div>`;
+
+  let html = `
+  <div class="seccion">
+    <div class="seccion-titulo">😴 Clientes sin actividad en +30 días</div>
+    <div class="seccion-subtitulo">${inactivos.length} cliente(s) sin pedidos recientes</div>
+    <table>
+      <thead><tr><th>#</th><th>Cliente</th><th>Teléfono</th><th>Dirección</th></tr></thead>
+      <tbody>`;
+
+  inactivos.forEach((c, i) => {
+    html += `<tr>
+      <td class="col-center">${i+1}</td>
+      <td>${c.nombre || c.escuela || '—'}</td>
+      <td>${c.telefono || '—'}</td>
+      <td style="font-size:10px;color:#888;">${c.direccion || '—'}</td>
+    </tr>`;
+  });
+
+  html += `</tbody></table></div>`;
+  return html;
+}
 // ============================================================
 // TOAST
 // ============================================================
@@ -1535,5 +1860,10 @@ function showToast(msg, tipo = 'info') {
     setTimeout(() => toast.remove(), 300);
   }, 3000);
 }
-
+// ============================================================
+// TOGGLE SELECCIÓN MÚLTIPLE DE REPORTES
+// ============================================================
+window.toggleReporteCard = function(card) {
+  card.classList.toggle('selected');
+};
 window.showToast = showToast;
