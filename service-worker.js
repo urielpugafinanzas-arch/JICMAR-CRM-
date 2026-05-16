@@ -1,5 +1,5 @@
 // ── Versión del cache ──
-const CACHE_NAME = 'jicmar-crm-v1.0.1';
+const CACHE_NAME = 'jicmar-crm-' + new Date().toISOString().slice(0,10);
 
 const ASSETS = [
   './index.html',
